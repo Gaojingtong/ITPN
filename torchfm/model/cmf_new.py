@@ -4,9 +4,6 @@ from torchfm.layer import FactorizationMachine, FeaturesEmbedding, FeaturesLinea
 
 
 class EmbLoss(nn.Module):
-    """ EmbLoss, regularization on embeddings
-
-    """
 
     def __init__(self, norm=2):
         super(EmbLoss, self).__init__()
@@ -33,10 +30,7 @@ class CMF(torch.nn.Module):
         self.user_embedding = FeaturesEmbedding([field_dims[0]], embed_dim*(len(field_dims)-1))
         self.item_embedding = FeaturesEmbedding(field_dims[1:], embed_dim)
         self.embed_dim = embed_dim
-        # self.SOURCE_LABEL = dataset.source_domain_dataset.label_field
-        # self.TARGET_LABEL = dataset.target_domain_dataset.label_field
 
-        # load parameters info
         self.alpha = alpha
         self.lamda = lamda
         self.gamma = gamma
@@ -57,9 +51,6 @@ class CMF(torch.nn.Module):
 
 
     def calculate_loss(self, x, label, cross):
-        # print(x.shape)
-        # print(label.shape)
-        # print(cross.shape)
         user_e = self.user_embedding(x[:, 0]).reshape((x.shape[0], -1))
         item_e = self.item_embedding(x[:, 1:]).reshape((x.shape[0], -1))
 

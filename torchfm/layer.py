@@ -25,9 +25,6 @@ class MultiLayerPerceptron2(nn.Module):
             self.out = nn.Linear(input_dim, 1)
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, embed_dim)``
-        """
         for layer in self.mlps:
             x = layer(x)
         if self.out_layer:
@@ -51,10 +48,8 @@ class controller_mlp(torch.nn.Module):
         if isinstance(m, nn.Linear):
             nn.init.xavier_normal_(m.weight)
             nn.init.constant_(m.bias, 0)
-        # 也可以判断是否为conv2d，使用相应的初始化方式 
         elif isinstance(m, nn.Conv2d):
             nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-        # 是否为批归一化层
         elif isinstance(m, nn.BatchNorm2d):
             nn.init.constant_(m.weight, 1)
             nn.init.constant_(m.bias, 0)
@@ -69,9 +64,6 @@ class FeaturesLinear(torch.nn.Module):
         self.offsets = np.array((0, *np.cumsum(field_dims)[:-1]), dtype=np.long)
 
     def forward(self, x):
-        """
-        :param x: Long tensor of size ``(batch_size, num_fields)``
-        """
         x = x + x.new_tensor(self.offsets).unsqueeze(0)
         return torch.sum(self.fc(x), dim=1) + self.bias
 
@@ -85,9 +77,6 @@ class FeaturesEmbedding(torch.nn.Module):
         torch.nn.init.xavier_uniform_(self.embedding.weight.data)
 
     def forward(self, x):
-        """
-        :param x: Long tensor of size ``(batch_size, num_fields)``
-        """
         x = x + x.new_tensor(self.offsets).unsqueeze(0)
         return self.embedding(x)
 
@@ -105,9 +94,6 @@ class FieldAwareFactorizationMachine(torch.nn.Module):
             torch.nn.init.xavier_uniform_(embedding.weight.data)
 
     def forward(self, x):
-        """
-        :param x: Long tensor of size ``(batch_size, num_fields)``
-        """
         x = x + x.new_tensor(self.offsets).unsqueeze(0)
         xs = [self.embeddings[i](x) for i in range(self.num_fields)]
         ix = list()
@@ -125,9 +111,6 @@ class FactorizationMachine(torch.nn.Module):
         self.reduce_sum = reduce_sum
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, num_fields, embed_dim)``
-        """
         square_of_sum = torch.sum(x, dim=1) ** 2
         sum_of_square = torch.sum(x ** 2, dim=1)
         ix = square_of_sum - sum_of_square
@@ -152,9 +135,6 @@ class MultiLayerPerceptron(torch.nn.Module):
         self.mlp = torch.nn.Sequential(*layers)
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, embed_dim)``
-        """
         return self.mlp(x)
 
 
@@ -163,9 +143,6 @@ class MultiLayerPerceptron(torch.nn.Module):
 class InnerProductNetwork(torch.nn.Module):
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, num_fields, embed_dim)``
-        """
         num_fields = x.shape[1]
         row, col = list(), list()
         for i in range(num_fields - 1):
@@ -192,9 +169,6 @@ class OuterProductNetwork(torch.nn.Module):
         torch.nn.init.xavier_uniform_(self.kernel.data)
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, num_fields, embed_dim)``
-        """
         num_fields = x.shape[1]
         row, col = list(), list()
         for i in range(num_fields - 1):
@@ -221,9 +195,6 @@ class CrossNetwork(torch.nn.Module):
         ])
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, num_fields, embed_dim)``
-        """
         x0 = x
         for i in range(self.num_layers):
             xw = self.w[i](x)
@@ -241,9 +212,6 @@ class AttentionalFactorizationMachine(torch.nn.Module):
         self.dropouts = dropouts
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, num_fields, embed_dim)``
-        """
         num_fields = x.shape[1]
         row, col = list(), list()
         for i in range(num_fields - 1):
@@ -278,9 +246,6 @@ class CompressedInteractionNetwork(torch.nn.Module):
         self.fc = torch.nn.Linear(fc_input_dim, 1)
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, num_fields, embed_dim)``
-        """
         xs = list()
         x0, h = x.unsqueeze(2), x
         for i in range(self.num_layers):
@@ -304,9 +269,6 @@ class AnovaKernel(torch.nn.Module):
         self.reduce_sum = reduce_sum
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, num_fields, embed_dim)``
-        """
         batch_size, num_fields, embed_dim = x.shape
         a_prev = torch.ones((batch_size, num_fields + 1, embed_dim), dtype=torch.float).to(x.device)
         for t in range(self.order):

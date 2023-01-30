@@ -11,12 +11,9 @@ class ControllerNetwork_instance(torch.nn.Module):
         self.controller_losses = None
     
     def forward(self, x):
-        """
-        :param x: Long tensor of size ``(batch_size, num_fields)``
-        """
         embed_x = self.embedding(x)
         output_layer = self.mlp(embed_x.view(-1, self.embed_output_dim))
-        return output_layer#torch.softmax(output_layer, dim=0).squeeze()
+        return output_layer
 
 class MultiLayerPerceptron(torch.nn.Module):
 
@@ -34,9 +31,6 @@ class MultiLayerPerceptron(torch.nn.Module):
         self.mlp = torch.nn.Sequential(*layers)
 
     def forward(self, x):
-        """
-        :param x: Float tensor of size ``(batch_size, embed_dim)``
-        """
         return self.mlp(x)
 
 class FeaturesEmbedding(torch.nn.Module):
@@ -48,9 +42,6 @@ class FeaturesEmbedding(torch.nn.Module):
         torch.nn.init.xavier_uniform_(self.embedding.weight.data)
 
     def forward(self, x):
-        """
-        :param x: Long tensor of size ``(batch_size, num_fields)``
-        """
         x = x + x.new_tensor(self.offsets).unsqueeze(0)
         return self.embedding(x)
 

@@ -5,9 +5,6 @@ import numpy as np
 from recbole.model.layers import MLPLayers
 
 class EmbLoss(nn.Module):
-    """ EmbLoss, regularization on embeddings
-
-    """
 
     def __init__(self, norm=2):
         super(EmbLoss, self).__init__()
@@ -47,18 +44,17 @@ class DTCDR(torch.nn.Module):
         self.target_item_embedding = FeaturesEmbedding(field_dims[1:], self.embedding_size)
 
         self.source_mlp_layers = MLPLayers([len(field_dims) * self.embedding_size] + self.mlp_hidden_size, self.dropout_prob)
-        self.source_mlp_layers.logger = None  # remove logger to use torch.save()
+        self.source_mlp_layers.logger = None
         self.source_predict_layer = nn.Linear(self.mlp_hidden_size[-1], 1)
 
         self.target_mlp_layers = MLPLayers([len(field_dims) * self.embedding_size] + self.mlp_hidden_size, self.dropout_prob)
-        self.target_mlp_layers.logger = None  # remove logger to use torch.save()
+        self.target_mlp_layers.logger = None
         self.target_predict_layer = nn.Linear(self.mlp_hidden_size[-1], 1)
 
         self.source_sigmoid = nn.Sigmoid()
         self.target_sigmoid = nn.Sigmoid()
 
         self.loss = nn.BCELoss()
-        # self.apply(xavier_normal_initialization)
 
     def forward(self, x, overlap=False):
         output = self.neumf_forward(x[:, 0], x[:, 1:], overlap, 'target')

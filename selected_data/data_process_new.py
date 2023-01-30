@@ -28,7 +28,7 @@ class SelectedDataset25(Dataset):
         self.field_dims = None
         if data_dir is not None:
             data = pd.read_csv(data_dir, header=0, names=["user_id", "item_id", "title", "year", "rating"],
-                               delimiter='\t', usecols=["user_id", "item_id", "title", "year", "rating"]).to_numpy()
+                               delimiter='\t', usecols=["user_id", "item_id", "year", "rating"]).to_numpy()
             # np.random.shuffle(data)
             self.field = data[:, :-1].astype(np.int)
             self.label = data[:, -1].astype(np.float)
@@ -150,6 +150,20 @@ def MergeDataset(a,b):
     c.label = np.hstack((d.label, c.label))
     c.field_dims = np.max(c.field, axis=0) + 1
     return c
+
+def CutDataset(a, threshold):
+    b = copy.deepcopy(a)
+    c = copy.deepcopy(a)
+    cutlen = int(len(a)*threshold)
+    b.field = b.field[:cutlen,:]
+    b.label = b.label[:cutlen]
+    b.field_dims = np.max(b.field, axis=0) + 1
+    c.field = c.field[cutlen:, :]
+    c.label = c.label[cutlen:]
+    c.field_dims = np.max(c.field, axis=0) + 1
+    return b,c
+
+
 
 def save_selected_data(save_path, selected_fields, selected_target):
     slct_fields = copy.deepcopy(selected_fields)

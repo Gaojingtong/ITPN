@@ -4,9 +4,6 @@ from torchfm.layer import FactorizationMachine, FeaturesEmbedding, FeaturesLinea
 
 
 class EmbLoss(nn.Module):
-    """ EmbLoss, regularization on embeddings
-
-    """
 
     def __init__(self, norm=2):
         super(EmbLoss, self).__init__()
@@ -30,8 +27,6 @@ class EmbLoss(nn.Module):
 class CLFM(torch.nn.Module):
     def __init__(self, field_dims, user_embedding_size, item_embedding_size, share_embedding_size, alpha, reg_weight):
         super(CLFM, self).__init__()
-
-        # load parameters info
         self.source_user_embedding = FeaturesEmbedding([field_dims[0]], user_embedding_size)
         self.target_user_embedding = FeaturesEmbedding([field_dims[0]], user_embedding_size)
 
@@ -65,7 +60,6 @@ class CLFM(torch.nn.Module):
         self.source_reg_loss = EmbLoss()
         self.target_reg_loss = EmbLoss()
 
-        # self.apply(xavier_normal_initialization)
 
     def forward_emb(self, user_e, item_e, is_target=True):
         user_e = user_e.reshape((user_e.shape[0], -1))
