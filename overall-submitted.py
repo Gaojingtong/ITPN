@@ -695,7 +695,7 @@ if __name__ == '__main__':
         '--dataset_path', default='')
     parser.add_argument('--model_name', default='ipnn')
     parser.add_argument('--epoch', type=int, default=10)
-    parser.add_argument('--ratio_num', type=int, default=1)
+    parser.add_argument('--ratio_num', type=int, default=21)
     parser.add_argument('--select_start', type=float, default=0.05)
     parser.add_argument('--select_end', type=float, default=1.0)
     parser.add_argument('--learning_rate', type=float, default=0.001)
