@@ -205,7 +205,7 @@ def test_a_batch(model, fields, label):
 def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid_data_loader, controller, optimizer_controller, data_loader, criterion, device, ControllerLoss, epsilon):
     model = []
     optimizer = []
-    mra = 2
+    mra = 1
     threshold = torch.tensor(0.5).to(device)
     for x in range(mra):
         model.append(get_model(model_name, field_dims).to(device))
