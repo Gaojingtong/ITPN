@@ -117,7 +117,6 @@ class EarlyStopper(object):
             self.logloss = logloss
             self.trial_counter = 0
             torch.save(model.state_dict(), self.save_path)
-            self.trial_counter=0
             return True
         elif self.trial_counter + 1 < self.num_trials:
             self.trial_counter += 1
@@ -158,7 +157,7 @@ def train_cdr_one_epoch(model, optimizer, data_loader, device, overlap_user=None
         optimizer.step()
 
 
-def test_batch(model, data_loader, device, overlap_user=None):
+def test_all(model, data_loader, device, overlap_user=None):
     model.eval()
     labels, predicts = [], []
     if overlap_user is not None:
@@ -207,7 +206,7 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
     model = []
     optimizer = []
     mra = 2
-    threshold = torch.tensor(0.5).to(device)
+    # threshold = torch.tensor(0.5).to(device)
     for x in range(mra):
         model.append(get_model(model_name, field_dims).to(device))
         optimizer.append(torch.optim.Adam(
@@ -258,7 +257,7 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
         output_layer1 = output_layer.detach()
         # sample the action, calculate the loss before update
         with torch.no_grad():
-            # threshold = torch.tensor(min(random.random(), 0.9)).to(device)
+            threshold = torch.tensor(min(random.random(), 0.99)).to(device)
             prob_instance = torch.softmax(output_layer1, dim=-1)
 
             sampled_actions = torch.where(prob_instance[:, 1] > threshold, 1, 0)
@@ -353,7 +352,7 @@ def train_target(field_dims,train_data_loader, valid_data_loader, test_data_load
     for epoch_i in range(40):
         train_target_one_epoch(model, optimizer, train_data_loader,
                   criterion, device)
-        auc, logloss = test_batch(model, valid_data_loader, device)
+        auc, logloss = test_all(model, valid_data_loader, device)
         print('\tepoch:', epoch_i,
               'validation: auc:', auc, 'logloss:', logloss)
         if not early_stopper.is_continuable(model, auc, logloss):
@@ -364,7 +363,7 @@ def train_target(field_dims,train_data_loader, valid_data_loader, test_data_load
         (train_end_time - train_start_time)/60))
     model.load_state_dict(torch.load(save_rs_name))
     if test_data_loader is not None:
-        auc, logloss = test_batch(model, test_data_loader, device)
+        auc, logloss = test_all(model, test_data_loader, device)
         print(f'\ttest auc: {auc}, logloss: {logloss}\n')
         return auc, logloss, model
     return early_stopper.best_auc, early_stopper.logloss, model
@@ -379,7 +378,7 @@ def train_cdr(field_dims, train_data_loader, valid_data_loader, test_data_loader
     train_start_time = time.time()
     for epoch_i in range(epoch):
         train_cdr_one_epoch(model, optimizer, train_data_loader, device, overlap_user)
-        auc, logloss = test_batch(model, valid_data_loader, device, overlap_user)
+        auc, logloss = test_all(model, valid_data_loader, device, overlap_user)
         print('\tepoch:', epoch_i,
               'validation: auc:', auc, 'logloss:', logloss)
         if not early_stopper.is_continuable(model, auc, logloss):
@@ -390,7 +389,7 @@ def train_cdr(field_dims, train_data_loader, valid_data_loader, test_data_loader
         (train_end_time - train_start_time)/60))
     model.load_state_dict(torch.load(save_cdr_name))
     if test_data_loader is not None:
-        auc, logloss = test_batch(model, test_data_loader, device)
+        auc, logloss = test_all(model, test_data_loader, device)
         print(f'\ttest auc: {auc}, logloss: {logloss}\n')
         return auc, logloss, model
     return early_stopper.best_auc, early_stopper.logloss, model
@@ -529,7 +528,7 @@ def main(dataset_path,
     controller = ControllerNetwork_instance(
         field_dims, embed_dim=16, mlp_dims=(64, 64), dropout=0.2).to(device)
     optimizer_controller = torch.optim.Adam(
-        params=controller.parameters(), lr=learning_rate*0.0001, weight_decay=weight_decay)
+        params=controller.parameters(), lr=learning_rate*0.001, weight_decay=weight_decay)
     ControllerLoss = nn.CrossEntropyLoss(reduction='none')
 
 
@@ -540,6 +539,7 @@ def main(dataset_path,
         train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid_data_loader, controller, optimizer_controller, cross_data_loader,
                               criterion, device, ControllerLoss, epsilon)
     torch.save(controller.state_dict(), save_controller_name)
+
     print(
         '\n\t========================= Target Training Phase ==========================\n')
 
@@ -567,7 +567,7 @@ def main(dataset_path,
                                                            None, model_name, learning_rate, criterion, weight_decay, device,
                                                            save_rs_name)
             # true test auc and logloss for reference, but not for training use
-            auc, logloss = test_batch(model, test_data_loader, device)
+            auc, logloss = test_all(model, test_data_loader, device)
 
             auc_list.append(auc)
             logloss_list.append(logloss)
@@ -594,7 +594,7 @@ def main(dataset_path,
                                                            device,
                                                            save_rs_name)
         # true test auc and logloss for reference, but not for training use
-        auc, logloss = test_batch(model, test_data_loader, device)
+        auc, logloss = test_all(model, test_data_loader, device)
 
         auc_list.append(auc)
         logloss_list.append(logloss)
@@ -615,7 +615,7 @@ def main(dataset_path,
                                              save_rs_name)
 
     print("\tTesting Merge...")
-    dataset_merge = CrossDataset(dataset_train, dataset_select)
+    dataset_merge = CrossDataset(dataset_train, dataset_trans)
     merge_data_loader = DataLoader(dataset_merge, batch_size=batch_size, shuffle=True)
     auc_merge, logloss_merge, _ = train_target(field_dims, merge_data_loader, valid_data_loader,
                                                    test_data_loader,
@@ -658,7 +658,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_setting', default="amazon")
     parser.add_argument(
         '--dataset_path', default='')
-    parser.add_argument('--model_name', default='dtcdr')
+    parser.add_argument('--model_name', default='afm')
     parser.add_argument('--epoch', type=int, default=10)
     parser.add_argument('--ratio_num', type=int, default=20)
     parser.add_argument('--select_start', type=float, default=0.05)
