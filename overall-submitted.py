@@ -202,19 +202,137 @@ def test_a_batch(model, fields, label):
     return roc_auc_score(labels, predicts), log_loss(labels, predicts)
 
 
+# def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid_data_loader, controller, optimizer_controller, data_loader, criterion, device, ControllerLoss, epsilon):
+#     model = []
+#     optimizer = []
+#     mra = 1
+#     threshold = torch.tensor(0.5).to(device)
+#     for x in range(mra):
+#         model.append(get_model(model_name, field_dims).to(device))
+#         optimizer.append(torch.optim.Adam(
+#             params=model[x].parameters(), lr=learning_rate, weight_decay=weight_decay))
+#     for i, (fields, label, cross) in enumerate(tqdm(data_loader)):
+#         fields, label, cross = fields.to(device), label.float().to(device), cross.to(device)
+#         for model_x in model:
+#             model_x.eval()
+#         controller.eval()
+#         has_target = True
+#         has_source = True
+#         with torch.no_grad():
+#             # seperate target and source
+#             label = label.reshape((-1, 1))
+#             target_idx = torch.nonzero(cross).squeeze()
+#             if target_idx is None or target_idx.dim() == 0 or target_idx.shape[0]== 0:
+#                 has_target = False
+#                 print("Target is none.")
+#             else:
+#                 target_idx = target_idx.reshape((-1, 1))
+#                 target_fields = torch.gather(
+#                     fields, 0, target_idx.repeat(1, fields.shape[1]))
+#                 target_label = (torch.gather(
+#                     label, 0, target_idx.repeat(1, label.shape[1]))).squeeze()
+#
+#             source_idx = torch.nonzero(1 - cross).squeeze()
+#             if source_idx is None or source_idx.dim() == 0 or source_idx.shape[0]== 0:
+#                 has_source = False
+#                 print("Source is none.")
+#             else:
+#                 source_idx = source_idx.reshape((-1, 1))
+#                 source_fields = torch.gather(
+#                     fields, 0, source_idx.repeat(1, fields.shape[1]))
+#                 source_label = torch.gather(
+#                     label, 0, source_idx.repeat(1, label.shape[1])).squeeze()
+#
+#             # validation before update
+#             auc = 0
+#             test_fields, test_label = next(iter(valid_data_loader))
+#             test_fields, test_label = test_fields.to(device), test_label.to(device)
+#             for x in range(mra):
+#                 auc_x,_ = test_a_batch(model[x], test_fields, test_label)
+#                 auc+=auc_x
+#             auc/=mra
+#
+#         controller.train()
+#         output_layer = controller(source_fields)
+#         output_layer1 = output_layer.detach()
+#         # sample the action, calculate the loss before update
+#         with torch.no_grad():
+#             # threshold = torch.tensor(min(random.random(), 0.99)).to(device)
+#             prob_instance = torch.softmax(output_layer1, dim=-1)
+#
+#             sampled_actions = torch.where(prob_instance[:, 1] > threshold, 1, 0)
+#             sampled_actions = torch.tensor(
+#                 [action if random.random() >= epsilon else -(action - 1) for action in sampled_actions]).to(device)
+#             prob_idx = torch.nonzero(sampled_actions).squeeze()
+#             if prob_idx is None or prob_idx.dim()==0 or prob_idx.shape[0]== 0:
+#                 print("No instance sampled.")
+#                 continue
+#             selected_label = torch.gather(source_label, 0, prob_idx)
+#             selected_instance = torch.gather(
+#                 source_fields, 0, prob_idx.reshape((-1,1)).repeat(1, source_fields.shape[1]))
+#             loss_list = None
+#             for x in range(mra):
+#                 y = model[x](source_fields)
+#                 loss_list = criterion(y, source_label).reshape((1,-1)).float() if loss_list is None else torch.cat((loss_list, criterion(y, source_label).reshape((1,-1)).float()))
+#             loss_list = torch.mean(loss_list,dim=0)
+#
+#         # update RS model
+#         for model_x in model:
+#             model_x.train()
+#         for x in range(mra):
+#             if not has_target:
+#                 y_sl = model[x](selected_instance)
+#                 loss_list_sl = criterion(y_sl, selected_label)
+#                 loss = loss_list_sl.mean()
+#             elif not has_source:
+#                 y_target = model[x](target_fields)
+#                 loss_list_target = criterion(y_target, target_label)
+#                 loss = loss_list_target.mean()
+#             else:
+#                 fields = torch.cat((target_fields, selected_instance))
+#                 label = torch.cat((target_label, selected_label))
+#                 y = model[x](fields)
+#                 loss_list_all = criterion(y, label)
+#                 loss = loss_list_all.mean()
+#
+#             model[x].zero_grad()
+#             loss.backward()
+#             optimizer[x].step()
+#             model[x].eval()
+#
+#         # update optimizer
+#         if has_source:
+#             # validation after update
+#             with torch.no_grad():
+#                 auc1 = 0
+#                 for x in range(mra):
+#                     auc_x, _ = test_a_batch(model[x], test_fields, test_label)
+#                     auc1 += auc_x
+#                 auc1 /= mra
+#                 # calculate the loss after update
+#                 loss_list1 = None
+#                 for x in range(mra):
+#                     y = model[x](source_fields)
+#                     loss_list1 = criterion(y, source_label).reshape((1,-1)).float() if loss_list1 is None else torch.cat(
+#                         (loss_list1, criterion(y, source_label).reshape((1,-1)).float()))
+#                 loss_list1 = torch.mean(loss_list1, dim=0)
+#                 # calculate reward
+#                 reward = (auc1-auc) * (loss_list - loss_list1)
+#             c_loss = torch.sum(ControllerLoss(output_layer, sampled_actions) * reward)
+#
+#             controller.zero_grad()
+#             c_loss.backward()
+#             optimizer_controller.step()
+#
+#     print("Probability: {}".format(prob_instance[:5, 1]))
 def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid_data_loader, controller, optimizer_controller, data_loader, criterion, device, ControllerLoss, epsilon):
-    model = []
-    optimizer = []
-    mra = 1
     threshold = torch.tensor(0.5).to(device)
-    for x in range(mra):
-        model.append(get_model(model_name, field_dims).to(device))
-        optimizer.append(torch.optim.Adam(
-            params=model[x].parameters(), lr=learning_rate, weight_decay=weight_decay))
+    model=get_model(model_name, field_dims).to(device)
+    optimizer=torch.optim.Adam(
+        params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     for i, (fields, label, cross) in enumerate(tqdm(data_loader)):
         fields, label, cross = fields.to(device), label.float().to(device), cross.to(device)
-        for model_x in model:
-            model_x.eval()
+        model.eval()
         controller.eval()
         has_target = True
         has_source = True
@@ -242,15 +360,13 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
                     fields, 0, source_idx.repeat(1, fields.shape[1]))
                 source_label = torch.gather(
                     label, 0, source_idx.repeat(1, label.shape[1])).squeeze()
+                y = model(source_fields)
+                loss_list = criterion(y, source_label).float()
 
             # validation before update
-            auc = 0
             test_fields, test_label = next(iter(valid_data_loader))
             test_fields, test_label = test_fields.to(device), test_label.to(device)
-            for x in range(mra):
-                auc_x,_ = test_a_batch(model[x], test_fields, test_label)
-                auc+=auc_x
-            auc/=mra
+            auc,_ = test_a_batch(model, test_fields, test_label)
 
         controller.train()
         output_layer = controller(source_fields)
@@ -270,52 +386,37 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
             selected_label = torch.gather(source_label, 0, prob_idx)
             selected_instance = torch.gather(
                 source_fields, 0, prob_idx.reshape((-1,1)).repeat(1, source_fields.shape[1]))
-            loss_list = None
-            for x in range(mra):
-                y = model[x](source_fields)
-                loss_list = criterion(y, source_label).reshape((1,-1)).float() if loss_list is None else torch.cat((loss_list, criterion(y, source_label).reshape((1,-1)).float()))
-            loss_list = torch.mean(loss_list,dim=0)
 
         # update RS model
-        for model_x in model:
-            model_x.train()
-        for x in range(mra):
-            if not has_target:
-                y_sl = model[x](selected_instance)
-                loss_list_sl = criterion(y_sl, selected_label)
-                loss = loss_list_sl.mean()
-            elif not has_source:
-                y_target = model[x](target_fields)
-                loss_list_target = criterion(y_target, target_label)
-                loss = loss_list_target.mean()
-            else:
-                fields = torch.cat((target_fields, selected_instance))
-                label = torch.cat((target_label, selected_label))
-                y = model[x](fields)
-                loss_list_all = criterion(y, label)
-                loss = loss_list_all.mean()
+        model.train()
+        if not has_target:
+            y_sl = model(selected_instance)
+            loss_list_sl = criterion(y_sl, selected_label)
+            loss = loss_list_sl.mean()
+        elif not has_source:
+            y_target = model(target_fields)
+            loss_list_target = criterion(y_target, target_label)
+            loss = loss_list_target.mean()
+        else:
+            fields = torch.cat((target_fields, selected_instance))
+            label = torch.cat((target_label, selected_label))
+            y = model(fields)
+            loss_list_all = criterion(y, label)
+            loss = loss_list_all.mean()
 
-            model[x].zero_grad()
-            loss.backward()
-            optimizer[x].step()
-            model[x].eval()
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+        model.eval()
 
         # update optimizer
         if has_source:
             # validation after update
             with torch.no_grad():
-                auc1 = 0
-                for x in range(mra):
-                    auc_x, _ = test_a_batch(model[x], test_fields, test_label)
-                    auc1 += auc_x
-                auc1 /= mra
+                auc1, _= test_a_batch(model, test_fields, test_label)
                 # calculate the loss after update
-                loss_list1 = None
-                for x in range(mra):
-                    y = model[x](source_fields)
-                    loss_list1 = criterion(y, source_label).reshape((1,-1)).float() if loss_list1 is None else torch.cat(
-                        (loss_list1, criterion(y, source_label).reshape((1,-1)).float()))
-                loss_list1 = torch.mean(loss_list1, dim=0)
+                y = model(source_fields)
+                loss_list1 = criterion(y, source_label).float()
                 # calculate reward
                 reward = (auc1-auc) * (loss_list - loss_list1)
             c_loss = torch.sum(ControllerLoss(output_layer, sampled_actions) * reward)
