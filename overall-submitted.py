@@ -206,7 +206,7 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
     model = []
     optimizer = []
     mra = 2
-    # threshold = torch.tensor(0.5).to(device)
+    threshold = torch.tensor(0.5).to(device)
     for x in range(mra):
         model.append(get_model(model_name, field_dims).to(device))
         optimizer.append(torch.optim.Adam(
@@ -257,7 +257,7 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
         output_layer1 = output_layer.detach()
         # sample the action, calculate the loss before update
         with torch.no_grad():
-            threshold = torch.tensor(min(random.random(), 0.99)).to(device)
+            # threshold = torch.tensor(min(random.random(), 0.99)).to(device)
             prob_instance = torch.softmax(output_layer1, dim=-1)
 
             sampled_actions = torch.where(prob_instance[:, 1] > threshold, 1, 0)
