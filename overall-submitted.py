@@ -631,7 +631,7 @@ def main(dataset_path,
     controller = ControllerNetwork_instance(
         field_dims, embed_dim=16, mlp_dims=(64, 64), dropout=0.2).to(device)
     optimizer_controller = torch.optim.Adam(
-        params=controller.parameters(), lr=learning_rate*0.0001, weight_decay=weight_decay)
+        params=controller.parameters(), lr=learning_rate*0.001, weight_decay=weight_decay)
     ControllerLoss = nn.CrossEntropyLoss(reduction='none')
 
 
