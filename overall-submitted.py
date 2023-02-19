@@ -202,137 +202,19 @@ def test_a_batch(model, fields, label):
     return roc_auc_score(labels, predicts), log_loss(labels, predicts)
 
 
-def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid_data_loader, controller, optimizer_controller, data_loader, criterion, device, ControllerLoss, epsilon):
-    model = []
-    optimizer = []
-    mra = 3
-    threshold = torch.tensor(0.5).to(device)
-    for x in range(mra):
-        model.append(get_model(model_name, field_dims).to(device))
-        optimizer.append(torch.optim.Adam(
-            params=model[x].parameters(), lr=learning_rate, weight_decay=weight_decay))
-    for i, (fields, label, cross) in enumerate(tqdm(data_loader)):
-        fields, label, cross = fields.to(device), label.float().to(device), cross.to(device)
-        for model_x in model:
-            model_x.eval()
-        controller.eval()
-        has_target = True
-        has_source = True
-        with torch.no_grad():
-            # seperate target and source
-            label = label.reshape((-1, 1))
-            target_idx = torch.nonzero(cross).squeeze()
-            if target_idx is None or target_idx.dim() == 0 or target_idx.shape[0]== 0:
-                has_target = False
-                print("Target is none.")
-            else:
-                target_idx = target_idx.reshape((-1, 1))
-                target_fields = torch.gather(
-                    fields, 0, target_idx.repeat(1, fields.shape[1]))
-                target_label = (torch.gather(
-                    label, 0, target_idx.repeat(1, label.shape[1]))).squeeze()
-
-            source_idx = torch.nonzero(1 - cross).squeeze()
-            if source_idx is None or source_idx.dim() == 0 or source_idx.shape[0]== 0:
-                has_source = False
-                print("Source is none.")
-            else:
-                source_idx = source_idx.reshape((-1, 1))
-                source_fields = torch.gather(
-                    fields, 0, source_idx.repeat(1, fields.shape[1]))
-                source_label = torch.gather(
-                    label, 0, source_idx.repeat(1, label.shape[1])).squeeze()
-
-            # validation before update
-            auc = 0
-            test_fields, test_label = next(iter(valid_data_loader))
-            test_fields, test_label = test_fields.to(device), test_label.to(device)
-            for x in range(mra):
-                auc_x,_ = test_a_batch(model[x], test_fields, test_label)
-                auc+=auc_x
-            auc/=mra
-
-        controller.train()
-        output_layer = controller(source_fields)
-        output_layer1 = output_layer.detach()
-        # sample the action, calculate the loss before update
-        with torch.no_grad():
-            # threshold = torch.tensor(min(random.random(), 0.99)).to(device)
-            prob_instance = torch.softmax(output_layer1, dim=-1)
-
-            sampled_actions = torch.where(prob_instance[:, 1] > threshold, 1, 0)
-            sampled_actions = torch.tensor(
-                [action if random.random() >= epsilon else -(action - 1) for action in sampled_actions]).to(device)
-            prob_idx = torch.nonzero(sampled_actions).squeeze()
-            if prob_idx is None or prob_idx.dim()==0 or prob_idx.shape[0]== 0:
-                print("No instance sampled.")
-                continue
-            selected_label = torch.gather(source_label, 0, prob_idx)
-            selected_instance = torch.gather(
-                source_fields, 0, prob_idx.reshape((-1,1)).repeat(1, source_fields.shape[1]))
-            loss_list = None
-            for x in range(mra):
-                y = model[x](source_fields)
-                loss_list = criterion(y, source_label).reshape((1,-1)).float() if loss_list is None else torch.cat((loss_list, criterion(y, source_label).reshape((1,-1)).float()))
-            loss_list = torch.mean(loss_list,dim=0)
-
-        # update RS model
-        for model_x in model:
-            model_x.train()
-        for x in range(mra):
-            if not has_target:
-                y_sl = model[x](selected_instance)
-                loss_list_sl = criterion(y_sl, selected_label)
-                loss = loss_list_sl.mean()
-            elif not has_source:
-                y_target = model[x](target_fields)
-                loss_list_target = criterion(y_target, target_label)
-                loss = loss_list_target.mean()
-            else:
-                fields = torch.cat((target_fields, selected_instance))
-                label = torch.cat((target_label, selected_label))
-                y = model[x](fields)
-                loss_list_all = criterion(y, label)
-                loss = loss_list_all.mean()
-
-            model[x].zero_grad()
-            loss.backward()
-            optimizer[x].step()
-            model[x].eval()
-
-        # update optimizer
-        if has_source:
-            # validation after update
-            with torch.no_grad():
-                auc1 = 0
-                for x in range(mra):
-                    auc_x, _ = test_a_batch(model[x], test_fields, test_label)
-                    auc1 += auc_x
-                auc1 /= mra
-                # calculate the loss after update
-                loss_list1 = None
-                for x in range(mra):
-                    y = model[x](source_fields)
-                    loss_list1 = criterion(y, source_label).reshape((1,-1)).float() if loss_list1 is None else torch.cat(
-                        (loss_list1, criterion(y, source_label).reshape((1,-1)).float()))
-                loss_list1 = torch.mean(loss_list1, dim=0)
-                # calculate reward
-                reward = (auc1-auc) * (loss_list - loss_list1)
-            c_loss = torch.sum(ControllerLoss(output_layer, sampled_actions) * reward)
-
-            controller.zero_grad()
-            c_loss.backward()
-            optimizer_controller.step()
-
-    print("Probability: {}".format(prob_instance[:5, 1]))
 # def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid_data_loader, controller, optimizer_controller, data_loader, criterion, device, ControllerLoss, epsilon):
+#     model = []
+#     optimizer = []
+#     mra = 3
 #     threshold = torch.tensor(0.5).to(device)
-#     model=get_model(model_name, field_dims).to(device)
-#     optimizer=torch.optim.Adam(
-#         params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+#     for x in range(mra):
+#         model.append(get_model(model_name, field_dims).to(device))
+#         optimizer.append(torch.optim.Adam(
+#             params=model[x].parameters(), lr=learning_rate, weight_decay=weight_decay))
 #     for i, (fields, label, cross) in enumerate(tqdm(data_loader)):
 #         fields, label, cross = fields.to(device), label.float().to(device), cross.to(device)
-#         model.eval()
+#         for model_x in model:
+#             model_x.eval()
 #         controller.eval()
 #         has_target = True
 #         has_source = True
@@ -360,13 +242,15 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
 #                     fields, 0, source_idx.repeat(1, fields.shape[1]))
 #                 source_label = torch.gather(
 #                     label, 0, source_idx.repeat(1, label.shape[1])).squeeze()
-#                 y = model(source_fields)
-#                 loss_list = criterion(y, source_label).float()
 #
 #             # validation before update
+#             auc = 0
 #             test_fields, test_label = next(iter(valid_data_loader))
 #             test_fields, test_label = test_fields.to(device), test_label.to(device)
-#             auc,_ = test_a_batch(model, test_fields, test_label)
+#             for x in range(mra):
+#                 auc_x,_ = test_a_batch(model[x], test_fields, test_label)
+#                 auc+=auc_x
+#             auc/=mra
 #
 #         controller.train()
 #         output_layer = controller(source_fields)
@@ -386,37 +270,52 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
 #             selected_label = torch.gather(source_label, 0, prob_idx)
 #             selected_instance = torch.gather(
 #                 source_fields, 0, prob_idx.reshape((-1,1)).repeat(1, source_fields.shape[1]))
+#             loss_list = None
+#             for x in range(mra):
+#                 y = model[x](source_fields)
+#                 loss_list = criterion(y, source_label).reshape((1,-1)).float() if loss_list is None else torch.cat((loss_list, criterion(y, source_label).reshape((1,-1)).float()))
+#             loss_list = torch.mean(loss_list,dim=0)
 #
 #         # update RS model
-#         model.train()
-#         if not has_target:
-#             y_sl = model(selected_instance)
-#             loss_list_sl = criterion(y_sl, selected_label)
-#             loss = loss_list_sl.mean()
-#         elif not has_source:
-#             y_target = model(target_fields)
-#             loss_list_target = criterion(y_target, target_label)
-#             loss = loss_list_target.mean()
-#         else:
-#             fields = torch.cat((target_fields, selected_instance))
-#             label = torch.cat((target_label, selected_label))
-#             y = model(fields)
-#             loss_list_all = criterion(y, label)
-#             loss = loss_list_all.mean()
+#         for model_x in model:
+#             model_x.train()
+#         for x in range(mra):
+#             if not has_target:
+#                 y_sl = model[x](selected_instance)
+#                 loss_list_sl = criterion(y_sl, selected_label)
+#                 loss = loss_list_sl.mean()
+#             elif not has_source:
+#                 y_target = model[x](target_fields)
+#                 loss_list_target = criterion(y_target, target_label)
+#                 loss = loss_list_target.mean()
+#             else:
+#                 fields = torch.cat((target_fields, selected_instance))
+#                 label = torch.cat((target_label, selected_label))
+#                 y = model[x](fields)
+#                 loss_list_all = criterion(y, label)
+#                 loss = loss_list_all.mean()
 #
-#         model.zero_grad()
-#         loss.backward()
-#         optimizer.step()
-#         model.eval()
+#             model[x].zero_grad()
+#             loss.backward()
+#             optimizer[x].step()
+#             model[x].eval()
 #
 #         # update optimizer
 #         if has_source:
 #             # validation after update
 #             with torch.no_grad():
-#                 auc1, _= test_a_batch(model, test_fields, test_label)
+#                 auc1 = 0
+#                 for x in range(mra):
+#                     auc_x, _ = test_a_batch(model[x], test_fields, test_label)
+#                     auc1 += auc_x
+#                 auc1 /= mra
 #                 # calculate the loss after update
-#                 y = model(source_fields)
-#                 loss_list1 = criterion(y, source_label).float()
+#                 loss_list1 = None
+#                 for x in range(mra):
+#                     y = model[x](source_fields)
+#                     loss_list1 = criterion(y, source_label).reshape((1,-1)).float() if loss_list1 is None else torch.cat(
+#                         (loss_list1, criterion(y, source_label).reshape((1,-1)).float()))
+#                 loss_list1 = torch.mean(loss_list1, dim=0)
 #                 # calculate reward
 #                 reward = (auc1-auc) * (loss_list - loss_list1)
 #             c_loss = torch.sum(ControllerLoss(output_layer, sampled_actions) * reward)
@@ -426,6 +325,107 @@ def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid
 #             optimizer_controller.step()
 #
 #     print("Probability: {}".format(prob_instance[:5, 1]))
+def train_noFullBatch(model_name, field_dims, learning_rate, weight_decay, valid_data_loader, controller, optimizer_controller, data_loader, criterion, device, ControllerLoss, epsilon):
+    threshold = torch.tensor(0.5).to(device)
+    model=get_model(model_name, field_dims).to(device)
+    optimizer=torch.optim.Adam(
+        params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    for i, (fields, label, cross) in enumerate(tqdm(data_loader)):
+        fields, label, cross = fields.to(device), label.float().to(device), cross.to(device)
+        model.eval()
+        controller.eval()
+        has_target = True
+        has_source = True
+        with torch.no_grad():
+            # seperate target and source
+            label = label.reshape((-1, 1))
+            target_idx = torch.nonzero(cross).squeeze()
+            if target_idx is None or target_idx.dim() == 0 or target_idx.shape[0]== 0:
+                has_target = False
+                print("Target is none.")
+            else:
+                target_idx = target_idx.reshape((-1, 1))
+                target_fields = torch.gather(
+                    fields, 0, target_idx.repeat(1, fields.shape[1]))
+                target_label = (torch.gather(
+                    label, 0, target_idx.repeat(1, label.shape[1]))).squeeze()
+
+            source_idx = torch.nonzero(1 - cross).squeeze()
+            if source_idx is None or source_idx.dim() == 0 or source_idx.shape[0]== 0:
+                has_source = False
+                print("Source is none.")
+            else:
+                source_idx = source_idx.reshape((-1, 1))
+                source_fields = torch.gather(
+                    fields, 0, source_idx.repeat(1, fields.shape[1]))
+                source_label = torch.gather(
+                    label, 0, source_idx.repeat(1, label.shape[1])).squeeze()
+                y = model(source_fields)
+                loss_list = criterion(y, source_label).float()
+
+            # validation before update
+            test_fields, test_label = next(iter(valid_data_loader))
+            test_fields, test_label = test_fields.to(device), test_label.to(device)
+            auc,_ = test_a_batch(model, test_fields, test_label)
+
+        controller.train()
+        output_layer = controller(source_fields)
+        output_layer1 = output_layer.detach()
+        # sample the action, calculate the loss before update
+        with torch.no_grad():
+            # threshold = torch.tensor(min(random.random(), 0.99)).to(device)
+            prob_instance = torch.softmax(output_layer1, dim=-1)
+
+            sampled_actions = torch.where(prob_instance[:, 1] > threshold, 1, 0)
+            sampled_actions = torch.tensor(
+                [action if random.random() >= epsilon else -(action - 1) for action in sampled_actions]).to(device)
+            prob_idx = torch.nonzero(sampled_actions).squeeze()
+            if prob_idx is None or prob_idx.dim()==0 or prob_idx.shape[0]== 0:
+                print("No instance sampled.")
+                continue
+            selected_label = torch.gather(source_label, 0, prob_idx)
+            selected_instance = torch.gather(
+                source_fields, 0, prob_idx.reshape((-1,1)).repeat(1, source_fields.shape[1]))
+
+        # update RS model
+        model.train()
+        if not has_target:
+            y_sl = model(selected_instance)
+            loss_list_sl = criterion(y_sl, selected_label)
+            loss = loss_list_sl.mean()
+        elif not has_source:
+            y_target = model(target_fields)
+            loss_list_target = criterion(y_target, target_label)
+            loss = loss_list_target.mean()
+        else:
+            fields = torch.cat((target_fields, selected_instance))
+            label = torch.cat((target_label, selected_label))
+            y = model(fields)
+            loss_list_all = criterion(y, label)
+            loss = loss_list_all.mean()
+
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+        model.eval()
+
+        # update optimizer
+        if has_source:
+            # validation after update
+            with torch.no_grad():
+                auc1, _= test_a_batch(model, test_fields, test_label)
+                # calculate the loss after update
+                y = model(source_fields)
+                loss_list1 = criterion(y, source_label).float()
+                # calculate reward
+                reward = (auc1-auc) * (loss_list - loss_list1)
+            c_loss = torch.sum(ControllerLoss(output_layer, sampled_actions) * reward)
+
+            controller.zero_grad()
+            c_loss.backward()
+            optimizer_controller.step()
+
+    print("Probability: {}".format(prob_instance[:5, 1]))
 
 
 
@@ -539,8 +539,9 @@ def main(dataset_path,
          epsilon,
          dataset_setting,
          ratio_num,
-         select_start,
-         select_end):
+         # select_start,
+         # select_end
+         ):
 
     if dataset_setting=="amazon":
         #0.9
@@ -572,8 +573,8 @@ def main(dataset_path,
     print('Select ratio:', select_ratio)
     print('Epsilon:', epsilon)
     print('Ratio num:', ratio_num)
-    print('Select start:', select_start)
-    print('Select end:', select_end)
+    # print('Select start:', select_start)
+    # print('Select end:', select_end)
 
     device = torch.device(device)
     dataset_trans = get_dataset(dataset_setting, path_source)
@@ -583,7 +584,8 @@ def main(dataset_path,
     info = '{}_{}_{}_{}_{}'.format(model_name, dataset_setting, str(epoch), str(batch_size), str(learning_rate))
     save_controller_name = './{}/controller_whole_'.format(
         save_dir) + info + '.pt'
-    save_rs_name = save_controller_name.replace('controller', 'rs')
+    save_rs_name = './{}/rs_whole_'.format(
+        save_dir) + info
     selected_data_path = './selected_data/notFixed_whole_{}_{}_train.txt'.format(
         model_name, dataset_setting)
 
@@ -645,28 +647,38 @@ def main(dataset_path,
         '\n\t========================= Target Training Phase ==========================\n')
 
     print('\t# start selection...')
-    max_auc = 0.0
-    max_logloss = 1000000.0
-    test_auc = 0
-    test_logloss = 0
-    max_ratio = 0.0
-    max_slct = 0
-    auc_list = [0]
-    logloss_list = [0]
-    x_list = [0.0]
+    Best_rs = None
     if select_ratio is None:
-        for select_ratio in np.linspace(select_start, select_end, num=ratio_num):
-            x_list.append(select_ratio)
+        max_auc = 0.0
+        max_logloss = 1000000.0
+        test_auc = 0
+        test_logloss = 0
+        max_ratio = 0.0
+        max_slct = 0
+        auc_list = []
+        logloss_list = []
+        x_list = []
+        # for ratio in np.linspace(select_start, select_end, num=ratio_num):
+        for ratio in np.linspace(0.0, 1.0, num=ratio_num):
+            x_list.append(ratio)
+            rs_path = save_rs_name+"_{}.pt".format(str(ratio))
 
-            slct_number = select_instance(dataset_trans, selected_data_path, controller, device,
-                                          select_ratio)
-            dataset_select = SelectedDataset(selected_data_path, name="selected")
-            print("\tRatio: {}\tSelect number: [{} / {}]\tSelect path: {}".format(select_ratio, slct_number, trans_num, selected_data_path))
-            dataset_merge = CrossDataset(dataset_train, dataset_select)
-            selected_data_loader = DataLoader(dataset_merge, batch_size=batch_size, shuffle=True)
-            retrain_auc, retrain_logloss, model = train_target(field_dims, selected_data_loader, valid_data_loader,
-                                                           None, model_name, learning_rate, criterion, weight_decay, device,
-                                                           save_rs_name)
+            if ratio==0.0:
+                slct_number = 0
+                retrain_auc, retrain_logloss, model = train_target(field_dims, train_data_loader, valid_data_loader,
+                                                         None,
+                                                         model_name, learning_rate, criterion, weight_decay, device,
+                                                         rs_path)
+            else:
+                slct_number = select_instance(dataset_trans, selected_data_path, controller, device,
+                                              ratio)
+                dataset_select = SelectedDataset(selected_data_path, name="selected")
+                print("\tRatio: {}\tSelect number: [{} / {}]\tSelect path: {}".format(ratio, slct_number, trans_num, selected_data_path))
+                dataset_merge = CrossDataset(dataset_train, dataset_select)
+                selected_data_loader = DataLoader(dataset_merge, batch_size=batch_size, shuffle=True)
+                retrain_auc, retrain_logloss, model = train_target(field_dims, selected_data_loader, valid_data_loader,
+                                                               None, model_name, learning_rate, criterion, weight_decay, device,
+                                                               rs_path)
             # true test auc and logloss for reference, but not for training use
             auc, logloss = test_all(model, test_data_loader, device)
 
@@ -674,15 +686,16 @@ def main(dataset_path,
             logloss_list.append(logloss)
 
             if retrain_auc>max_auc:
-                max_ratio = select_ratio
+                max_ratio = ratio
                 max_auc=retrain_auc
                 max_logloss = retrain_logloss
                 max_slct = slct_number
                 test_auc = auc
                 test_logloss = logloss
-    else:
-        x_list.append(select_ratio)
+                Best_rs = rs_path
 
+    else:
+        Best_rs = save_rs_name+"_{:.2f}.pt".format(select_ratio)
         slct_number = select_instance(dataset_trans, selected_data_path, controller, device,
                                       select_ratio)
         dataset_select = SelectedDataset(selected_data_path, name="selected")
@@ -690,62 +703,45 @@ def main(dataset_path,
                                                                               selected_data_path))
         dataset_merge = CrossDataset(dataset_train, dataset_select)
         selected_data_loader = DataLoader(dataset_merge, batch_size=batch_size, shuffle=True)
-        retrain_auc, retrain_logloss, model = train_target(field_dims, selected_data_loader, valid_data_loader,
-                                                           None, model_name, learning_rate, criterion, weight_decay,
+        auc, logloss, model = train_target(field_dims, selected_data_loader, valid_data_loader,
+                                                           test_data_loader, model_name, learning_rate, criterion, weight_decay,
                                                            device,
-                                                           save_rs_name)
-        # true test auc and logloss for reference, but not for training use
-        auc, logloss = test_all(model, test_data_loader, device)
+                                                           Best_rs)
 
-        auc_list.append(auc)
-        logloss_list.append(logloss)
-
-        if retrain_auc > max_auc:
-            max_ratio = select_ratio
-            max_auc = retrain_auc
-            max_logloss = retrain_logloss
-            max_slct = slct_number
-            test_auc = auc
-            test_logloss = logloss
-
-    # training with target set only (ratio=0.0)
-    print("\tTesting Target...")
-    auc_list[0], logloss_list[0], _ = train_target(field_dims, train_data_loader, valid_data_loader,
-                                             test_data_loader,
-                                             model_name, learning_rate, criterion, weight_decay, device,
-                                             save_rs_name)
-
-    print("\tTesting Merge...")
-    dataset_merge = CrossDataset(dataset_train, dataset_trans)
-    merge_data_loader = DataLoader(dataset_merge, batch_size=batch_size, shuffle=True)
-    auc_merge, logloss_merge, _ = train_target(field_dims, merge_data_loader, valid_data_loader,
-                                                   test_data_loader,
-                                                   model_name, learning_rate, criterion, weight_decay, device,
-                                                   save_rs_name)
-    auc_list.append(auc_merge)
-    logloss_list.append(logloss_merge)
-    x_list.append(1.0)
     print('\t========================= End Training and Testing =========================\n')
     print("\t----------------------------------------------------------------------------\n")
 
-    print("Target: auc_{:.8f}  logloss_{:.8f}".format(
-        auc_list[0], logloss_list[0]))
-    print("Merge: auc_{:.8f}  logloss_{:.8f}".format(
-        auc_list[-1], logloss_list[-1]))
-    print("Selection: auc_{:.8f}  logloss_{:.8f}".format(
-        test_auc, test_logloss))
+    if select_ratio is None:
+        print("Target: auc_{:.8f}  logloss_{:.8f}".format(
+            auc_list[0], logloss_list[0]))
+        print("Merge: auc_{:.8f}  logloss_{:.8f}".format(
+            auc_list[-1], logloss_list[-1]))
+        print("Selection: auc_{:.8f}  logloss_{:.8f}".format(
+            test_auc, test_logloss))
 
-    print("Best Ratio: {}, Slct: [{} / {}]".format(max_ratio, max_slct, trans_num))
-    final_performance=[max_auc,max_logloss]
-    with open('Record_data/%s_%s_notFixed_whole.txt' % (model_name, dataset_setting), 'a') as the_file:
-        the_file.write('\nModel:%s\nDataset:%s\nSearching Epoches: %d\nLearning Rate: %s\nBatch Size: %d\nWeight Decay: %s\nDevice: %s\nSelect Ratio: %s\nEpsilon: %s\nRatio Num: %d\nSelect start: %s\nSelect End: %s\nFinal performance: %s\n'
-                   % (model_name, dataset_setting, epoch_i+1, str(learning_rate), batch_size, str(weight_decay), device, str(max_ratio), str(epsilon), ratio_num, str(select_start), str(select_end), str(final_performance)))
-    print("Ratio x_axis: ", x_list)
-    print("AUC axis: ", auc_list)
-    print("Logloss axis: ", logloss_list)
+        print("Best Ratio: {}, Slct: [{} / {}]".format(max_ratio, max_slct, trans_num))
+        final_performance=[max_auc,max_logloss]
+        print("Ratio x_axis: ", x_list)
+        print("AUC axis: ", auc_list)
+        print("Logloss axis: ", logloss_list)
+        with open('Record_data/%s_%s_notFixed_whole.txt' % (model_name, dataset_setting), 'a') as the_file:
+            the_file.write(
+                '\nModel:%s\nDataset:%s\nSearching Epoches: %d\nLearning Rate: %s\nBatch Size: %d\nWeight Decay: %s\nDevice: %s\nSelect Ratio: %s\nEpsilon: %s\nRatio Num: %d\nFinal performance: %s\n'
+                % (model_name, dataset_setting, epoch_i + 1, str(learning_rate), batch_size, str(weight_decay), device,
+                   str(max_ratio), str(epsilon), ratio_num, str(final_performance)))
+    else:
+        final_performance = [auc, logloss]
+        print("Selection: auc_{:.8f}  logloss_{:.8f}".format(
+            auc, logloss))
+        print("Ratio: {}, Slct: [{} / {}]".format(select_ratio, slct_number, trans_num))
+        with open('Record_data/%s_%s_notFixed_whole.txt' % (model_name, dataset_setting), 'a') as the_file:
+            the_file.write(
+                '\nModel:%s\nDataset:%s\nSearching Epoches: %d\nLearning Rate: %s\nBatch Size: %d\nWeight Decay: %s\nDevice: %s\nSelect Ratio: %s\nEpsilon: %s\nFinal performance: %s\n'
+                % (model_name, dataset_setting, epoch_i + 1, str(learning_rate), batch_size, str(weight_decay), device,
+                   str(select_ratio), str(epsilon), str(final_performance)))
     print("Selected data save to: ", selected_data_path)
     print("controller save to: ", save_controller_name)
-    print("Best rs model save to: ", save_rs_name)
+    print("Best rs model save to: ", Best_rs)
 
 
 
@@ -761,9 +757,9 @@ if __name__ == '__main__':
         '--dataset_path', default='')
     parser.add_argument('--model_name', default='afm')
     parser.add_argument('--epoch', type=int, default=10)
-    parser.add_argument('--ratio_num', type=int, default=20)
-    parser.add_argument('--select_start', type=float, default=0.05)
-    parser.add_argument('--select_end', type=float, default=0.95)
+    parser.add_argument('--ratio_num', type=int, default=41)
+    # parser.add_argument('--select_start', type=float, default=0.05)
+    # parser.add_argument('--select_end', type=float, default=1.0)
     parser.add_argument('--learning_rate', type=float, default=0.01)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
@@ -789,5 +785,6 @@ if __name__ == '__main__':
              args.epsilon,
              args.dataset_setting,
              args.ratio_num,
-             args.select_start,
-             args.select_end)
+             # args.select_start,
+             # args.select_end
+             )
